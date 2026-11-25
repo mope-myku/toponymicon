@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Карта топонимов</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root {
+    --bg: #eef1ee;
+    --panel: #f8faf8;
+    --ink: #1c2823;
+    --muted: #5b6b64;
+    --line: #cdd7d1;
+    --accent: #2c6a4f;
+    --pin: #ffffff;
+    --pin-line: #2c6a4f;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151b18;
+      --panel: #1c2420;
+      --ink: #e4ebe7;
+      --muted: #94a59c;
+      --line: #33403a;
+      --accent: #6fc19a;
+      --pin: #232d28;
+      --pin-line: #6fc19a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  aside {
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  header { padding: 20px 20px 14px; border-bottom: 1px solid var(--line); }
+  h1 {
+    margin: 0 0 4px;
+    font: 600 24px/1.15 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  }
+  #count { margin: 0; color: var(--muted); font-size: 14px; }
+
+  .tools { display: flex; gap: 8px; padding: 10px 20px; border-bottom: 1px solid var(--line); }
+  .tools button {
+    font: inherit; font-size: 13px; color: var(--accent);
+    background: none; border: 1px solid var(--line); border-radius: 6px;
+    padding: 4px 10px; cursor: pointer;
+  }
+  .tools button:hover { border-color: var(--accent); }
+
+  #types { list-style: none; margin: 0; padding: 6px 12px 16px; overflow-y: auto; flex: 1; }
+  #types label {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 8px; border-radius: 6px; cursor: pointer;
+  }
+  #types label:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  #types input { accent-color: var(--accent); width: 16px; height: 16px; }
+  .t-icon { width: 22px; text-align: center; font-size: 17px; }
+  .t-name { flex: 1; }
+  .t-num { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  li.empty .t-name, li.empty .t-icon { opacity: .45; }
+
+  #map { height: 100%; min-height: 0; }
+  #status {
+    position: absolute; z-index: 1000; left: 340px; right: 20px; top: 16px;
+    padding: 10px 14px; border-radius: 8px;
+    background: var(--panel); border: 1px solid var(--line);
+    box-shadow: 0 2px 10px rgba(0,0,0,.15);
+  }
+  #status[hidden] { display: none; }
+
+  .pin {
+    width: 34px; height: 34px;
+    display: grid; place-items: center;
+    background: var(--pin);
+    border: 2px solid var(--pin-line);
+    border-radius: 50% 50% 50% 4px;
+    transform: rotate(-45deg);
+    box-shadow: 0 2px 6px rgba(0,0,0,.3);
+  }
+  .pin span { transform: rotate(45deg); font-size: 18px; line-height: 1; }
+
+  .leaflet-popup-content { margin: 14px 16px; font: 15px/1.45 system-ui, sans-serif; }
+  .p-type { margin: 0 0 2px; font-size: 13px; color: #5b6b64; }
+  .p-name { margin: 0 0 6px; font: 600 19px/1.2 "Iowan Old Style", Georgia, serif; }
+  .p-desc { margin: 0; white-space: pre-line; }
+
+  @media (max-width: 760px) {
+    body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    aside { border-right: 0; border-bottom: 1px solid var(--line); max-height: 46vh; }
+    aside.collapsed #types, aside.collapsed .tools { display: none; }
+    header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; cursor: pointer; padding: 12px 16px; }
+    h1 { font-size: 20px; }
+    #status { left: 16px; top: auto; bottom: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<aside id="side">
+  <header id="head">
+    <h1>Карта топонимов</h1>
+    <p id="count">Загрузка…</p>
+  </header>
+  <div class="tools">
+    <button type="button" id="all">Показать все</button>
+    <button type="button" id="none">Скрыть все</button>
+  </div>
+  <ul id="types"></ul>
+</aside>
+
+<div id="map" role="application" aria-label="Карта топонимов"></div>
+<div id="status" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+/* ================== НАСТРОЙКИ ================== */
+
+// Адрес веб-приложения Apps Script (Развернуть -> Веб-приложение), заканчивается на /exec
+const DATA_URL = 'https://script.google.com/macros/s/AKfycbyKzNW0mcK-gcd_JOwZ6L8i89310FG_Y4zXhfE0kSTTyllEh7wCT0PmZu9lvpweo2Iu/exec';
+
+// Центр и масштаб карты, пока нет точек
+const DEFAULT_VIEW = { center: [55.75, 37.62], zoom: 5 };
+
+// Виды топонимов. Название должно ТОЧНО совпадать с вариантом в выпадающем списке формы.
+// Чтобы добавить вид: допишите строку здесь и такой же вариант в форму.
+const TYPES = [
+  { name: 'Родник, ключ',                    icon: '💧' },
+  { name: 'Ручей, река',                     icon: '🌊' },
+  { name: 'Озеро, пруд, старица',            icon: '🏞️' },
+  { name: 'Болото',                          icon: '🌿' },
+  { name: 'Овраг, балка, лог',               icon: '🕳️' },
+  { name: 'Холм, гора, косогор',             icon: '⛰️' },
+  { name: 'Лес, роща',                       icon: '🌲' },
+  { name: 'Поле, луг, покос',                icon: '🌾' },
+  { name: 'Приметное дерево',                icon: '🌳' },
+  { name: 'Камень, валун',                   icon: '🪨' },
+  { name: 'Брод, мост, переправа',           icon: '🌉' },
+  { name: 'Дорога, тропа',                   icon: '🥾' },
+  { name: 'Колодец',                         icon: '🪣' },
+  { name: 'Часть селения (улица, конец)',    icon: '🏘️' },
+  { name: 'Усадьба, двор, починок',          icon: '🏠' },
+  { name: 'Мельница, промысловое место',     icon: '⚙️' },
+  { name: 'Кладбище, могила',                icon: '🪦' },
+  { name: 'Святое место, часовня, крест',    icon: '⛪' },
+  { name: 'Курган, городище',                icon: '🗿' },
+  { name: 'Другое',                          icon: '📍' },
+];
+
+/* ================== КОД ================== */
+
+const FALLBACK_ICON = '📍';
+const iconOf = name => (TYPES.find(t => t.name === name) || {}).icon || FALLBACK_ICON;
+
+const map = L.map('map', { zoomControl: true }).setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; участники <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+}).addTo(map);
+
+const statusEl = document.getElementById('status');
+const countEl = document.getElementById('count');
+const typesEl = document.getElementById('types');
+
+const groups = new Map();   // вид -> слой с маркерами
+const counts = new Map();   // вид -> число точек
+
+function showStatus(text) { statusEl.textContent = text; statusEl.hidden = false; }
+function hideStatus() { statusEl.hidden = true; }
+
+function makeMarker(p) {
+  const icon = L.divIcon({
+    className: '',
+    html: '<div class="pin"><span></span></div>',
+    iconSize: [34, 34],
+    iconAnchor: [5, 34],
+    popupAnchor: [12, -34],
+  });
+  const marker = L.marker([p.lat, p.lon], { icon, title: p.name, keyboard: true });
+
+  // Эмодзи и тексты вставляем через textContent: введённое людьми не может внедрить код
+  marker.on('add', () => {
+    const span = marker.getElement().querySelector('.pin span');
+    if (span && !span.textContent) span.textContent = iconOf(p.type);
+  });
+
+  const box = document.createElement('div');
+  const t = document.createElement('p'); t.className = 'p-type'; t.textContent = p.type;
+  const n = document.createElement('h2'); n.className = 'p-name'; n.textContent = p.name;
+  box.append(t, n);
+  if (p.description) {
+    const d = document.createElement('p'); d.className = 'p-desc'; d.textContent = p.description;
+    box.append(d);
+  }
+  marker.bindPopup(box, { maxWidth: 300 });
+  return marker;
+}
+
+function buildLegend() {
+  // Виды из списка + любые неизвестные, пришедшие из таблицы
+  const names = TYPES.map(t => t.name);
+  counts.forEach((_, name) => { if (!names.includes(name)) names.push(name); });
+
+  names.forEach(name => {
+    const n = counts.get(name) || 0;
+    const li = document.createElement('li');
+    if (!n) li.className = 'empty';
+
+    const label = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = true; cb.dataset.type = name;
+    cb.addEventListener('change', () => toggle(name, cb.checked));
+
+    const ic = document.createElement('span'); ic.className = 't-icon'; ic.textContent = iconOf(name);
+    const nm = document.createElement('span'); nm.className = 't-name'; nm.textContent = name;
+    const num = document.createElement('span'); num.className = 't-num'; num.textContent = n;
+
+    label.append(cb, ic, nm, num);
+    li.append(label);
+    typesEl.append(li);
+  });
+}
+
+function toggle(name, on) {
+  const g = groups.get(name);
+  if (!g) return;
+  on ? g.addTo(map) : map.removeLayer(g);
+}
+
+function setAll(on) {
+  typesEl.querySelectorAll('input').forEach(cb => { cb.checked = on; toggle(cb.dataset.type, on); });
+}
+
+async function load() {
+  if (DATA_URL.startsWith('ВСТАВЬТЕ')) {
+    countEl.textContent = 'Не задан адрес данных';
+    showStatus('В файле index.html замените DATA_URL на адрес вашего веб-приложения Apps Script.');
+    buildLegend();
+    return;
+  }
+  try {
+    const res = await fetch(DATA_URL);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const points = await res.json();
+
+    points.forEach(p => {
+      if (!groups.has(p.type)) groups.set(p.type, L.layerGroup().addTo(map));
+      counts.set(p.type, (counts.get(p.type) || 0) + 1);
+      makeMarker(p).addTo(groups.get(p.type));
+    });
+
+    countEl.textContent = points.length
+      ? 'Топонимов на карте: ' + points.length
+      : 'Пока нет одобренных топонимов';
+
+    if (points.length) {
+      map.fitBounds(L.latLngBounds(points.map(p => [p.lat, p.lon])).pad(0.15), { maxZoom: 14 });
+    }
+    buildLegend();
+    hideStatus();
+  } catch (err) {
+    countEl.textContent = 'Не удалось загрузить данные';
+    showStatus('Не удалось загрузить топонимы. Обновите страницу или зайдите позже.');
+    buildLegend();
+    console.error(err);
+  }
+}
+
+document.getElementById('all').addEventListener('click', () => setAll(true));
+document.getElementById('none').addEventListener('click', () => setAll(false));
+
+// На телефоне панель сворачивается по нажатию на заголовок
+const side = document.getElementById('side');
+if (matchMedia('(max-width: 760px)').matches) side.classList.add('collapsed');
+document.getElementById('head').addEventListener('click', () => {
+  if (matchMedia('(max-width: 760px)').matches) {
+    side.classList.toggle('collapsed');
+    setTimeout(() => map.invalidateSize(), 50);
+  }
+});
+
+load();
+</script>
+</body>
+</html>
