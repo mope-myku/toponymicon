@@ -130,6 +130,14 @@
   .b-type { margin: 0 0 2px; font-size: 13px; color: #5b6b64; }
   .b-name { margin: 0 0 6px; font: 600 18px/1.2 "Iowan Old Style", Georgia, serif; color: #1c2823; }
   .b-desc { margin: 0; color: #1c2823; font: 14px/1.45 system-ui, sans-serif; }
+  .b-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .b-link, .b-btn {
+    font: 600 13px/1.2 system-ui, sans-serif; padding: 7px 10px; border-radius: 6px;
+    border: 1px solid #2c6a4f; background: #2c6a4f; color: #fff;
+    text-decoration: none; cursor: pointer;
+  }
+  .b-btn { background: #fff; color: #2c6a4f; }
+  .hint { margin: 0 20px 12px; font-size: 13px; color: var(--muted); }
 
   @media (max-width: 760px) {
     body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
@@ -162,6 +170,7 @@
   </header>
   <div class="ornament" aria-hidden="true"><img src="chuvash-ceremonial-tree-42.svg" alt=""></div>
   <a id="add" class="add" href="#" target="_blank" rel="noopener"></a>
+  <p id="hint" class="hint"></p>
   <div class="tools">
     <button type="button" id="all"></button>
     <button type="button" id="none"></button>
@@ -186,6 +195,13 @@ const DATA_URL = 'https://script.google.com/macros/s/AKfycbyKzNW0mcK-gcd_JOwZ6L8
 const FORM_URLS = {
   ru: 'https://docs.google.com/forms/d/e/1FAIpQLScBFj6w1t2vVsiYipM7D56J1QSOw7-cZ3fkkbZqpxaRhSj55w/viewform',
   cv: '',
+};
+
+// Номер поля «Координаты» в форме, чтобы координаты клика подставлялись в форму сами.
+// Как его найти, написано в инструкции. Вид: 'entry.1234567890'. Пусто = не подставлять.
+const FORM_ENTRY = {
+  ru: '',
+  cv: '',   // пусто = берётся значение для ru
 };
 
 // Центр и масштаб карты, пока нет точек. Центр: [широта, долгота]
@@ -236,6 +252,11 @@ const I18N = {
     notConfigured: 'Страница не настроена',
     notConfiguredLong: 'В файле index.html нужно заменить YANDEX_KEY на ключ Яндекс Карт и DATA_URL на адрес веб-приложения Apps Script.',
     mapLabel: 'Карта топонимов',
+    hint: 'Нажмите на карту, чтобы скопировать координаты места',
+    copied: '✓ Координаты скопированы',
+    copyFailed: 'Не удалось скопировать автоматически. Выделите координаты и скопируйте вручную.',
+    copyBtn: 'Копировать',
+    suggestHere: 'Предложить топоним здесь',
     types: {},
   },
   cv: {
@@ -252,6 +273,11 @@ const I18N = {
     notConfigured: 'Страница хатӗрлемен',
     notConfiguredLong: 'index.html файлра YANDEX_KEY тата DATA_URL ҫине хӑвӑрӑн ключпа адреса лартмалла.',
     mapLabel: 'Топонимсен картти',
+    hint: 'Вырӑн координатисене илме картӑна пусӑр',
+    copied: '✓ Копире илнӗ',
+    copyFailed: 'Хӑех копире илеймерӗмӗр. Координатӑсене алӑпа копирелӗр.',
+    copyBtn: 'Копире',
+    suggestHere: 'Ку вырӑна топоним сӗн',
     types: {
       'Родник, ключ': 'Ҫӑл',
       'Ручей, река': 'Юхан шыв',
@@ -328,6 +354,7 @@ function applyTexts() {
   document.getElementById('all').textContent = t('showAll');
   document.getElementById('none').textContent = t('hideAll');
   document.getElementById('map').setAttribute('aria-label', t('mapLabel'));
+  document.getElementById('hint').textContent = t('hint');
   addEl.textContent = t('add');
 
   const url = FORM_URLS[lang] || FORM_URLS.ru || '';
@@ -391,6 +418,69 @@ function makePlacemark(p, PinLayout) {
   return pm;
 }
 
+/* ----- Клик по карте: координаты в буфер обмена и в форму ----- */
+
+function fallbackCopy(text) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch (e) { return false; }
+}
+
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text).then(() => true, () => fallbackCopy(text));
+  }
+  return Promise.resolve(fallbackCopy(text));
+}
+
+// Ссылка на форму с уже подставленными координатами (если указан номер поля)
+function formLinkFor(text) {
+  const base = FORM_URLS[lang] || FORM_URLS.ru || '';
+  if (!base.startsWith('http')) return { url: '', prefilled: false };
+  let entry = (FORM_ENTRY[lang] || FORM_ENTRY.ru || '').trim();
+  if (!entry) return { url: base, prefilled: false };
+  if (!/^entry\./.test(entry)) entry = 'entry.' + entry;
+  try {
+    const u = new URL(base);
+    u.searchParams.set('usp', 'pp_url');
+    u.searchParams.set(entry, text);
+    return { url: u.toString(), prefilled: true };
+  } catch (e) {
+    return { url: base, prefilled: false };
+  }
+}
+
+function showPick(coords) {
+  const text = coords[0].toFixed(6) + ', ' + coords[1].toFixed(6);
+  copyText(text).then(ok => {
+    const form = formLinkFor(text);
+    const label = form.prefilled ? t('suggestHere') : t('add');
+    map.balloon.open(coords, {
+      contentHeader: '<p class="b-name">' + esc(text) + '</p>',
+      contentBody: '<p class="b-desc">' + esc(t(ok ? 'copied' : 'copyFailed')) + '</p>',
+      contentFooter: '<div class="b-actions">' +
+        (form.url ? '<a class="b-link" href="' + esc(form.url) + '" target="_blank" rel="noopener">' + esc(label) + '</a>' : '') +
+        '<button type="button" class="b-btn" data-copy="' + esc(text) + '">' + esc(t('copyBtn')) + '</button>' +
+        '</div>',
+    });
+  });
+}
+
+// Кнопка «Копировать» внутри всплывающего окна
+document.addEventListener('click', e => {
+  const b = e.target.closest && e.target.closest('[data-copy]');
+  if (!b) return;
+  copyText(b.dataset.copy).then(ok => { b.textContent = ok ? t('copied') : t('copyFailed'); });
+});
+
 /* ----- Список видов ----- */
 
 function rebuildLegend() {
@@ -449,6 +539,13 @@ async function load() {
       zoom: DEFAULT_VIEW.zoom,
       controls: ['zoomControl', 'typeSelector', 'fullscreenControl'],
     }, { suppressMapOpenBlock: true });
+
+    // Клик по пустому месту карты (клики по меткам сюда не относятся)
+    map.events.add('click', e => {
+      const target = e.get('target');
+      if (target && target.geometry) return;
+      showPick(e.get('coords'));
+    });
 
     const PinLayout = ymaps.templateLayoutFactory.createClass(
       '<div class="pin">{{ properties.icon }}</div>'
