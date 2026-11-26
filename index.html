@@ -200,7 +200,7 @@ const FORM_URLS = {
 // Номер поля «Координаты» в форме, чтобы координаты клика подставлялись в форму сами.
 // Как его найти, написано в инструкции. Вид: 'entry.1234567890'. Пусто = не подставлять.
 const FORM_ENTRY = {
-  ru: 'entry.1738880944',
+  ru: '',
   cv: '',   // пусто = берётся значение для ru
 };
 
@@ -252,7 +252,8 @@ const I18N = {
     notConfigured: 'Страница не настроена',
     notConfiguredLong: 'В файле index.html нужно заменить YANDEX_KEY на ключ Яндекс Карт и DATA_URL на адрес веб-приложения Apps Script.',
     mapLabel: 'Карта топонимов',
-    hint: 'Нажмите на карту, чтобы скопировать координаты места',
+    hint: 'Нажмите правой кнопкой мыши на карту, чтобы скопировать координаты места',
+    hintTouch: 'Нажмите на карту, чтобы скопировать координаты места',
     copied: '✓ Координаты скопированы',
     copyFailed: 'Не удалось скопировать автоматически. Выделите координаты и скопируйте вручную.',
     copyBtn: 'Копировать',
@@ -273,7 +274,8 @@ const I18N = {
     notConfigured: 'Страница хатӗрлемен',
     notConfiguredLong: 'index.html файлра YANDEX_KEY тата DATA_URL ҫине хӑвӑрӑн ключпа адреса лартмалла.',
     mapLabel: 'Топонимсен картти',
-    hint: 'Вырӑн координатисене илме картӑна пусӑр',
+    hint: 'Вырӑн координатисене илме картӑна сылтӑм кнопкӑпа пусӑр',
+    hintTouch: 'Вырӑн координатисене илме картӑна пусӑр',
     copied: '✓ Копире илнӗ',
     copyFailed: 'Хӑех копире илеймерӗмӗр. Координатӑсене алӑпа копирелӗр.',
     copyBtn: 'Копире',
@@ -305,6 +307,8 @@ const I18N = {
 /* ================== КОД ================== */
 
 const FALLBACK_ICON = '📍';
+// На телефонах и планшетах правой кнопки нет, поэтому там координаты берутся обычным нажатием
+const IS_TOUCH = matchMedia('(pointer: coarse)').matches;
 const iconOf = name => (TYPES.find(t => t.name === name) || {}).icon || FALLBACK_ICON;
 
 const statusEl = document.getElementById('status');
@@ -354,7 +358,7 @@ function applyTexts() {
   document.getElementById('all').textContent = t('showAll');
   document.getElementById('none').textContent = t('hideAll');
   document.getElementById('map').setAttribute('aria-label', t('mapLabel'));
-  document.getElementById('hint').textContent = t('hint');
+  document.getElementById('hint').textContent = t(IS_TOUCH ? 'hintTouch' : 'hint');
   addEl.textContent = t('add');
 
   const url = FORM_URLS[lang] || FORM_URLS.ru || '';
@@ -540,11 +544,18 @@ async function load() {
       controls: ['zoomControl', 'typeSelector', 'fullscreenControl'],
     }, { suppressMapOpenBlock: true });
 
-    // Клик по пустому месту карты (клики по меткам сюда не относятся)
-    map.events.add('click', e => {
+    // Координаты места: правая кнопка мыши на компьютере, обычное нажатие на сенсорных экранах.
+    // Метки топонимов сюда не относятся (у них своё окно).
+    const onPick = e => {
       const target = e.get('target');
       if (target && target.geometry) return;
       showPick(e.get('coords'));
+    };
+    map.events.add(IS_TOUCH ? 'click' : 'contextmenu', onPick);
+
+    // Не показывать меню браузера при правом клике по карте (кроме текста в окне с координатами)
+    document.getElementById('map').addEventListener('contextmenu', e => {
+      if (!e.target.closest('[class*="balloon"]')) e.preventDefault();
     });
 
     const PinLayout = ymaps.templateLayoutFactory.createClass(
