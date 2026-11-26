@@ -138,11 +138,13 @@
   }
   .b-btn { background: #fff; color: #2c6a4f; }
   .hint { margin: 0 20px 12px; font-size: 13px; color: var(--muted); }
+  .opt { display: flex; align-items: center; gap: 10px; margin: 0 20px 8px; cursor: pointer; font-size: 14px; }
+  .opt input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
 
   @media (max-width: 760px) {
     body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
     aside { border-right: 0; border-bottom: 1px solid var(--line); max-height: 46vh; }
-    aside.collapsed #types, aside.collapsed .tools { display: none; }
+    aside.collapsed #types, aside.collapsed .tools, aside.collapsed .opt, aside.collapsed .hint { display: none; }
     header {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
@@ -170,6 +172,7 @@
   </header>
   <div class="ornament" aria-hidden="true"><img src="chuvash-ceremonial-tree-42.svg" alt=""></div>
   <a id="add" class="add" href="#" target="_blank" rel="noopener"></a>
+  <label class="opt"><input type="checkbox" id="pickToggle"><span id="pickLabel"></span></label>
   <p id="hint" class="hint"></p>
   <div class="tools">
     <button type="button" id="all"></button>
@@ -254,6 +257,8 @@ const I18N = {
     mapLabel: 'Карта топонимов',
     hint: 'Нажмите правой кнопкой мыши на карту, чтобы скопировать координаты места',
     hintTouch: 'Нажмите на карту, чтобы скопировать координаты места',
+    pickToggle: 'Координаты по правой кнопке мыши',
+    pickToggleTouch: 'Координаты по нажатию на карту',
     copied: '✓ Координаты скопированы',
     copyFailed: 'Не удалось скопировать автоматически. Выделите координаты и скопируйте вручную.',
     copyBtn: 'Копировать',
@@ -276,6 +281,8 @@ const I18N = {
     mapLabel: 'Топонимсен картти',
     hint: 'Вырӑн координатисене илме картӑна сылтӑм кнопкӑпа пусӑр',
     hintTouch: 'Вырӑн координатисене илме картӑна пусӑр',
+    pickToggle: 'Координатӑсем сылтӑм кнопкӑпа',
+    pickToggleTouch: 'Координатӑсем картӑна пусса',
     copied: '✓ Копире илнӗ',
     copyFailed: 'Хӑех копире илеймерӗмӗр. Координатӑсене алӑпа копирелӗр.',
     copyBtn: 'Копире',
@@ -339,6 +346,12 @@ function pickLang() {
 
 let lang = pickLang();
 let countState = { key: 'loading', n: 0 };
+
+// Включена ли выдача координат по клику; выбор запоминается в браузере
+function loadPick() {
+  try { return localStorage.getItem('pick') !== '0'; } catch (e) { return true; }
+}
+let pickEnabled = loadPick();
 let statusKey = null;
 
 function t(key, vars) {
@@ -358,7 +371,11 @@ function applyTexts() {
   document.getElementById('all').textContent = t('showAll');
   document.getElementById('none').textContent = t('hideAll');
   document.getElementById('map').setAttribute('aria-label', t('mapLabel'));
-  document.getElementById('hint').textContent = t(IS_TOUCH ? 'hintTouch' : 'hint');
+  const hintEl = document.getElementById('hint');
+  hintEl.textContent = t(IS_TOUCH ? 'hintTouch' : 'hint');
+  hintEl.hidden = !pickEnabled;
+  document.getElementById('pickLabel').textContent = t(IS_TOUCH ? 'pickToggleTouch' : 'pickToggle');
+  document.getElementById('pickToggle').checked = pickEnabled;
   addEl.textContent = t('add');
 
   const url = FORM_URLS[lang] || FORM_URLS.ru || '';
@@ -547,6 +564,7 @@ async function load() {
     // Координаты места: правая кнопка мыши на компьютере, обычное нажатие на сенсорных экранах.
     // Метки топонимов сюда не относятся (у них своё окно).
     const onPick = e => {
+      if (!pickEnabled) return;
       const target = e.get('target');
       if (target && target.geometry) return;
       showPick(e.get('coords'));
@@ -555,6 +573,7 @@ async function load() {
 
     // Не показывать меню браузера при правом клике по карте (кроме текста в окне с координатами)
     document.getElementById('map').addEventListener('contextmenu', e => {
+      if (!pickEnabled) return;
       if (!e.target.closest('[class*="balloon"]')) e.preventDefault();
     });
 
@@ -594,6 +613,12 @@ async function load() {
 
 /* ----- События ----- */
 
+document.getElementById('pickToggle').addEventListener('change', e => {
+  pickEnabled = e.target.checked;
+  try { localStorage.setItem('pick', pickEnabled ? '1' : '0'); } catch (err) {}
+  document.getElementById('hint').hidden = !pickEnabled;
+  if (!pickEnabled && map) map.balloon.close();
+});
 document.getElementById('all').addEventListener('click', () => setAll(true));
 document.getElementById('none').addEventListener('click', () => setAll(false));
 document.getElementById('lang').addEventListener('click', e => {
