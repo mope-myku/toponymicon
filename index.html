@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Карта топонимов</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
   :root {
     --bg: #eef1ee;
@@ -13,8 +12,6 @@
     --muted: #5b6b64;
     --line: #cdd7d1;
     --accent: #2c6a4f;
-    --pin: #ffffff;
-    --pin-line: #2c6a4f;
     color-scheme: light dark;
   }
   @media (prefers-color-scheme: dark) {
@@ -25,8 +22,6 @@
       --muted: #94a59c;
       --line: #33403a;
       --accent: #6fc19a;
-      --pin: #232d28;
-      --pin-line: #6fc19a;
     }
   }
   * { box-sizing: border-box; }
@@ -82,21 +77,21 @@
   }
   #status[hidden] { display: none; }
 
+  /* Значок на карте (его html подставляется в макет Яндекс Карт) */
   .pin {
     width: 34px; height: 34px;
     display: grid; place-items: center;
-    background: var(--pin);
-    border: 2px solid var(--pin-line);
-    border-radius: 50% 50% 50% 4px;
-    transform: rotate(-45deg);
-    box-shadow: 0 2px 6px rgba(0,0,0,.3);
+    background: #ffffff;
+    border: 2px solid #2c6a4f;
+    border-radius: 50%;
+    box-shadow: 0 2px 6px rgba(0,0,0,.35);
+    font-size: 18px; line-height: 1;
   }
-  .pin span { transform: rotate(45deg); font-size: 18px; line-height: 1; }
 
-  .leaflet-popup-content { margin: 14px 16px; font: 15px/1.45 system-ui, sans-serif; }
-  .p-type { margin: 0 0 2px; font-size: 13px; color: #5b6b64; }
-  .p-name { margin: 0 0 6px; font: 600 19px/1.2 "Iowan Old Style", Georgia, serif; }
-  .p-desc { margin: 0; white-space: pre-line; }
+  /* Всплывающее окно */
+  .b-type { margin: 0 0 2px; font-size: 13px; color: #5b6b64; }
+  .b-name { margin: 0 0 6px; font: 600 18px/1.2 "Iowan Old Style", Georgia, serif; color: #1c2823; }
+  .b-desc { margin: 0; color: #1c2823; font: 14px/1.45 system-ui, sans-serif; }
 
   @media (max-width: 760px) {
     body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
@@ -125,18 +120,19 @@
 <div id="map" role="application" aria-label="Карта топонимов"></div>
 <div id="status" hidden></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 /* ================== НАСТРОЙКИ ================== */
 
-// Адрес веб-приложения Apps Script (Развернуть -> Веб-приложение), заканчивается на /exec
-const DATA_URL = 'https://script.google.com/macros/s/AKfycbyKzNW0mcK-gcd_JOwZ6L8i89310FG_Y4zXhfE0kSTTyllEh7wCT0PmZu9lvpweo2Iu/exec';
+// Ключ Яндекс Карт (кабинет разработчика, продукт «JavaScript API и HTTP Геокодер»)
+const YANDEX_KEY = '0904c216-9d48-4c01-9fdb-daa4bf61b96c';
 
-// Центр и масштаб карты, пока нет точек
+// Адрес веб-приложения Apps Script (заканчивается на /exec)
+const DATA_URL = 'https://script.google.com/macros/s/AKfycbyKzNW0mcK-gcd_JOwZ6L8i89310FG_Y4zXhfE0kSTTyllEh7wCT0PmZu9lvpweo2Iu/exec'';
+
+// Центр и масштаб карты, пока нет точек. Центр: [широта, долгота]
 const DEFAULT_VIEW = { center: [55.75, 37.62], zoom: 5 };
 
 // Виды топонимов. Название должно ТОЧНО совпадать с вариантом в выпадающем списке формы.
-// Чтобы добавить вид: допишите строку здесь и такой же вариант в форму.
 const TYPES = [
   { name: 'Родник, ключ',                    icon: '💧' },
   { name: 'Ручей, река',                     icon: '🌊' },
@@ -165,52 +161,49 @@ const TYPES = [
 const FALLBACK_ICON = '📍';
 const iconOf = name => (TYPES.find(t => t.name === name) || {}).icon || FALLBACK_ICON;
 
-const map = L.map('map', { zoomControl: true }).setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-  attribution: '&copy; участники <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-}).addTo(map);
-
 const statusEl = document.getElementById('status');
 const countEl = document.getElementById('count');
 const typesEl = document.getElementById('types');
 
-const groups = new Map();   // вид -> слой с маркерами
+const groups = new Map();   // вид -> коллекция меток
 const counts = new Map();   // вид -> число точек
+let map = null;
 
 function showStatus(text) { statusEl.textContent = text; statusEl.hidden = false; }
 function hideStatus() { statusEl.hidden = true; }
 
-function makeMarker(p) {
-  const icon = L.divIcon({
-    className: '',
-    html: '<div class="pin"><span></span></div>',
-    iconSize: [34, 34],
-    iconAnchor: [5, 34],
-    popupAnchor: [12, -34],
-  });
-  const marker = L.marker([p.lat, p.lon], { icon, title: p.name, keyboard: true });
+// Всплывающее окно Яндекса принимает HTML, поэтому весь введённый людьми текст экранируем
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, ch =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
 
-  // Эмодзи и тексты вставляем через textContent: введённое людьми не может внедрить код
-  marker.on('add', () => {
-    const span = marker.getElement().querySelector('.pin span');
-    if (span && !span.textContent) span.textContent = iconOf(p.type);
+function loadYandex(key) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://api-maps.yandex.ru/2.1/?apikey=' + encodeURIComponent(key) + '&lang=ru_RU';
+    s.onload = () => ymaps.ready(resolve);
+    s.onerror = () => reject(new Error('Не удалось загрузить API Яндекс Карт'));
+    document.head.appendChild(s);
   });
+}
 
-  const box = document.createElement('div');
-  const t = document.createElement('p'); t.className = 'p-type'; t.textContent = p.type;
-  const n = document.createElement('h2'); n.className = 'p-name'; n.textContent = p.name;
-  box.append(t, n);
-  if (p.description) {
-    const d = document.createElement('p'); d.className = 'p-desc'; d.textContent = p.description;
-    box.append(d);
-  }
-  marker.bindPopup(box, { maxWidth: 300 });
-  return marker;
+function makePlacemark(p, PinLayout) {
+  return new ymaps.Placemark([p.lat, p.lon], {
+    icon: iconOf(p.type),
+    hintContent: esc(p.name),
+    balloonContentHeader: '<p class="b-name">' + esc(p.name) + '</p>',
+    balloonContentBody:
+      '<p class="b-type">' + esc(p.type) + '</p>' +
+      (p.description ? '<p class="b-desc">' + esc(p.description).replace(/\n/g, '<br>') + '</p>' : ''),
+  }, {
+    iconLayout: PinLayout,
+    iconShape: { type: 'Circle', coordinates: [0, 0], radius: 17 },
+    iconOffset: [-17, -17],
+  });
 }
 
 function buildLegend() {
-  // Виды из списка + любые неизвестные, пришедшие из таблицы
   const names = TYPES.map(t => t.name);
   counts.forEach((_, name) => { if (!names.includes(name)) names.push(name); });
 
@@ -236,8 +229,8 @@ function buildLegend() {
 
 function toggle(name, on) {
   const g = groups.get(name);
-  if (!g) return;
-  on ? g.addTo(map) : map.removeLayer(g);
+  if (!g || !map) return;
+  on ? map.geoObjects.add(g) : map.geoObjects.remove(g);
 }
 
 function setAll(on) {
@@ -245,21 +238,38 @@ function setAll(on) {
 }
 
 async function load() {
-  if (DATA_URL.startsWith('ВСТАВЬТЕ')) {
-    countEl.textContent = 'Не задан адрес данных';
-    showStatus('В файле index.html замените DATA_URL на адрес вашего веб-приложения Apps Script.');
+  if (YANDEX_KEY.startsWith('ВСТАВЬТЕ') || DATA_URL.startsWith('ВСТАВЬТЕ')) {
+    countEl.textContent = 'Страница не настроена';
+    showStatus('В файле index.html нужно заменить YANDEX_KEY на ключ Яндекс Карт и DATA_URL на адрес веб-приложения Apps Script.');
     buildLegend();
     return;
   }
+
   try {
+    await loadYandex(YANDEX_KEY);
+
+    map = new ymaps.Map('map', {
+      center: DEFAULT_VIEW.center,
+      zoom: DEFAULT_VIEW.zoom,
+      controls: ['zoomControl', 'typeSelector', 'fullscreenControl'],
+    }, { suppressMapOpenBlock: true });
+
+    const PinLayout = ymaps.templateLayoutFactory.createClass(
+      '<div class="pin">{{ properties.icon }}</div>'
+    );
+
     const res = await fetch(DATA_URL);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const points = await res.json();
 
     points.forEach(p => {
-      if (!groups.has(p.type)) groups.set(p.type, L.layerGroup().addTo(map));
+      if (!groups.has(p.type)) {
+        const g = new ymaps.GeoObjectCollection();
+        groups.set(p.type, g);
+        map.geoObjects.add(g);
+      }
       counts.set(p.type, (counts.get(p.type) || 0) + 1);
-      makeMarker(p).addTo(groups.get(p.type));
+      groups.get(p.type).add(makePlacemark(p, PinLayout));
     });
 
     countEl.textContent = points.length
@@ -267,13 +277,14 @@ async function load() {
       : 'Пока нет одобренных топонимов';
 
     if (points.length) {
-      map.fitBounds(L.latLngBounds(points.map(p => [p.lat, p.lon])).pad(0.15), { maxZoom: 14 });
+      map.setBounds(map.geoObjects.getBounds(), { checkZoomRange: true, zoomMargin: 50 })
+        .then(() => { if (map.getZoom() > 14) map.setZoom(14); });
     }
     buildLegend();
     hideStatus();
   } catch (err) {
     countEl.textContent = 'Не удалось загрузить данные';
-    showStatus('Не удалось загрузить топонимы. Обновите страницу или зайдите позже.');
+    showStatus('Не удалось загрузить карту или топонимы. Обновите страницу или зайдите позже.');
     buildLegend();
     console.error(err);
   }
@@ -288,7 +299,7 @@ if (matchMedia('(max-width: 760px)').matches) side.classList.add('collapsed');
 document.getElementById('head').addEventListener('click', () => {
   if (matchMedia('(max-width: 760px)').matches) {
     side.classList.toggle('collapsed');
-    setTimeout(() => map.invalidateSize(), 50);
+    setTimeout(() => map && map.container.fitToViewport(), 50);
   }
 });
 
