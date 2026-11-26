@@ -41,20 +41,42 @@
     flex-direction: column;
     min-height: 0;
   }
-  header { padding: 20px 20px 14px; border-bottom: 1px solid var(--line); }
+  header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: start;
+    gap: 6px 12px;
+    padding: 20px 20px 14px;
+    border-bottom: 1px solid var(--line);
+  }
   h1 {
-    margin: 0 0 4px;
+    margin: 0;
     font: 600 24px/1.15 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   }
-  #count { margin: 0; color: var(--muted); font-size: 14px; }
+  #count { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 14px; }
 
-  .tools { display: flex; gap: 8px; padding: 10px 20px; border-bottom: 1px solid var(--line); }
-  .tools button {
-    font: inherit; font-size: 13px; color: var(--accent);
-    background: none; border: 1px solid var(--line); border-radius: 6px;
-    padding: 4px 10px; cursor: pointer;
+  /* Переключатель языка */
+  .lang { display: flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+  .lang button {
+    font: inherit; font-size: 13px; color: var(--ink);
+    background: none; border: 0; padding: 4px 9px; cursor: pointer;
   }
-  .tools button:hover { border-color: var(--accent); }  .add {
+  .lang button + button { border-left: 1px solid var(--line); }
+  .lang button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  @media (prefers-color-scheme: dark) { .lang button[aria-pressed="true"] { color: #10201a; } }
+  .lang button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  /* Узор */
+  .ornament {
+    background: #f7f4f1;
+    border-bottom: 1px solid var(--line);
+    padding: 10px 14px;
+  }
+  .ornament img { display: block; width: 100%; height: auto; }
+  aside.collapsed .ornament { display: none; }
+
+  /* Кнопка «Предложить топоним» */
+  .add {
     display: block; margin: 12px 20px; padding: 10px 14px;
     text-align: center; text-decoration: none; font-weight: 600;
     background: var(--accent); color: #fff; border-radius: 8px;
@@ -63,6 +85,14 @@
   .add:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
   .add[hidden] { display: none; }
   @media (prefers-color-scheme: dark) { .add { color: #10201a; } }
+
+  .tools { display: flex; gap: 8px; padding: 10px 20px; border-bottom: 1px solid var(--line); }
+  .tools button {
+    font: inherit; font-size: 13px; color: var(--accent);
+    background: none; border: 1px solid var(--line); border-radius: 6px;
+    padding: 4px 10px; cursor: pointer;
+  }
+  .tools button:hover { border-color: var(--accent); }
 
   #types { list-style: none; margin: 0; padding: 6px 12px 16px; overflow-y: auto; flex: 1; }
   #types label {
@@ -85,7 +115,7 @@
   }
   #status[hidden] { display: none; }
 
-  /* Значок на карте (его html подставляется в макет Яндекс Карт) */
+  /* Значок на карте */
   .pin {
     width: 34px; height: 34px;
     display: grid; place-items: center;
@@ -105,44 +135,33 @@
     body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
     aside { border-right: 0; border-bottom: 1px solid var(--line); max-height: 46vh; }
     aside.collapsed #types, aside.collapsed .tools { display: none; }
-    header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; cursor: pointer; padding: 12px 16px; }
+    header { cursor: pointer; padding: 12px 16px; }
     h1 { font-size: 20px; }
     #status { left: 16px; top: auto; bottom: 16px; }
   }
-    :root {
-    --tile: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='%23b3261e' stroke-width='2'%3E%3Crect x='6' y='6' width='12' height='12'/%3E%3Crect x='6' y='6' width='12' height='12' transform='rotate(45 12 12)'/%3E%3C/g%3E%3Crect x='11' y='11' width='2' height='2' fill='%23b3261e'/%3E%3C/svg%3E");
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --tile: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='%23e0736b' stroke-width='2'%3E%3Crect x='6' y='6' width='12' height='12'/%3E%3Crect x='6' y='6' width='12' height='12' transform='rotate(45 12 12)'/%3E%3C/g%3E%3Crect x='11' y='11' width='2' height='2' fill='%23e0736b'/%3E%3C/svg%3E");
-    }
-  }
-    .ornament {
-    background: #f7f4f1;
-    border-bottom: 1px solid var(--line);
-    padding: 10px 14px;
-  }
-  .ornament img { display: block; width: 100%; height: auto; }
-  aside.collapsed .ornament { display: none; }
 </style>
 </head>
 <body>
 
 <aside id="side">
   <header id="head">
-    <h1>Карта топонимов</h1>
-    <p id="count">Загрузка…</p>
+    <h1 id="title"></h1>
+    <div class="lang" id="lang" role="group" aria-label="Язык / Чӗлхе">
+      <button type="button" data-lang="ru">Русский</button>
+      <button type="button" data-lang="cv">Чӑвашла</button>
+    </div>
+    <p id="count"></p>
   </header>
-      <div class="ornament" aria-hidden="true"><img src="chuvash-ceremonial-tree-42.svg" alt=""></div>
-    <a id="add" class="add" href="#" target="_blank" rel="noopener">Предложить топоним</a>
+  <div class="ornament" aria-hidden="true"><img src="chuvash-ceremonial-tree-42.svg" alt=""></div>
+  <a id="add" class="add" href="#" target="_blank" rel="noopener"></a>
   <div class="tools">
-    <button type="button" id="all">Показать все</button>
-    <button type="button" id="none">Скрыть все</button>
+    <button type="button" id="all"></button>
+    <button type="button" id="none"></button>
   </div>
   <ul id="types"></ul>
 </aside>
 
-<div id="map" role="application" aria-label="Карта топонимов"></div>
+<div id="map" role="application"></div>
 <div id="status" hidden></div>
 
 <script>
@@ -155,12 +174,15 @@ const YANDEX_KEY = '0904c216-9d48-4c01-9fdb-daa4bf61b96c';
 const DATA_URL = 'https://script.google.com/macros/s/AKfycbyKzNW0mcK-gcd_JOwZ6L8i89310FG_Y4zXhfE0kSTTyllEh7wCT0PmZu9lvpweo2Iu/exec';
 
 // Ссылка на вашу Google Форму
-const FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLScBFj6w1t2vVsiYipM7D56J1QSOw7-cZ3fkkbZqpxaRhSj55w/viewform';
+  ru: 'https://docs.google.com/forms/d/e/1FAIpQLScBFj6w1t2vVsiYipM7D56J1QSOw7-cZ3fkkbZqpxaRhSj55w/viewform',
+  cv: '',
+};
 
 // Центр и масштаб карты, пока нет точек. Центр: [широта, долгота]
 const DEFAULT_VIEW = { center: [55.75, 37.62], zoom: 5 };
 
-// Виды топонимов. Название должно ТОЧНО совпадать с вариантом в выпадающем списке формы.
+// Виды топонимов. name должен ТОЧНО совпадать с вариантом в выпадающем списке формы
+// (форма остаётся на русском), а подписи для сайта задаются ниже в I18N.
 const TYPES = [
   { name: 'Родник, ключ',                    icon: '💧' },
   { name: 'Ручей, река',                     icon: '🌊' },
@@ -184,6 +206,66 @@ const TYPES = [
   { name: 'Другое',                          icon: '📍' },
 ];
 
+/* ================== ТЕКСТЫ САЙТА ==================
+   Чтобы поправить перевод, меняйте строки справа от двоеточий.
+   Если для вида топонима нет перевода в types, будет показано русское название.
+   Названия и описания топонимов, которые ввели люди, не переводятся. */
+
+const I18N = {
+  ru: {
+    htmlLang: 'ru',
+    title: 'Карта топонимов',
+    loading: 'Загрузка…',
+    showAll: 'Показать все',
+    hideAll: 'Скрыть все',
+    add: 'Предложить топоним',
+    count: 'Топонимов на карте: {n}',
+    empty: 'Пока нет одобренных топонимов',
+    loadError: 'Не удалось загрузить данные',
+    loadErrorLong: 'Не удалось загрузить карту или топонимы. Обновите страницу или зайдите позже.',
+    notConfigured: 'Страница не настроена',
+    notConfiguredLong: 'В файле index.html нужно заменить YANDEX_KEY на ключ Яндекс Карт и DATA_URL на адрес веб-приложения Apps Script.',
+    mapLabel: 'Карта топонимов',
+    types: {},
+  },
+  cv: {
+    htmlLang: 'cv',
+    title: 'Топонимсен картти',
+    loading: 'Кӗтӗр…',
+    showAll: 'Пурне те кӑтарт',
+    hideAll: 'Пурне те пытар',
+    add: 'Топоним сӗн',
+    count: 'Топонимсен шучӗ: {n}',
+    empty: 'Халлӗхе ырланӑ топоним ҫук',
+    loadError: 'Данньӑйсене тиевлеймерӗмӗр',
+    loadErrorLong: 'Карта е топонимсем тиевленмерӗ. Страницӑна ҫӗнӗрен уҫӑр.',
+    notConfigured: 'Страница хатӗрлемен',
+    notConfiguredLong: 'index.html файлра YANDEX_KEY тата DATA_URL ҫине хӑвӑрӑн ключпа адреса лартмалла.',
+    mapLabel: 'Топонимсен картти',
+    types: {
+      'Родник, ключ': 'Ҫӑл',
+      'Ручей, река': 'Юхан шыв',
+      'Озеро, пруд, старица': 'Кӳлӗ, пӗве',
+      'Овраг, балка, лог': 'Ҫырма',
+      'Холм, гора, косогор': 'Ту, сӑрт',
+      'Лес, роща': 'Вӑрман',
+      'Поле, луг, покос': 'Ана, ҫаран',
+      'Приметное дерево': 'Паллӑ йывӑҫ',
+      'Камень, валун': 'Чул',
+      'Брод, мост, переправа': 'Кӗпер, каҫмалли',
+      'Дорога, тропа': 'Ҫул, сукмак',
+      'Часть селения (улица, конец)': 'Ял пайӗ (урам)',
+      'Усадьба, двор, починок': 'Ҫурт-йӗр',
+      'Мельница, промысловое место': 'Арман',
+      'Кладбище, могила': 'Масар',
+      'Святое место, часовня, крест': 'Сӑваплӑ вырӑн',
+      'Другое': 'Ытти',
+      // Для остальных видов (болото, колодец, курган) переводы не заданы.
+      // Добавьте их сюда по образцу, например:  'Болото': '...',
+    },
+  },
+};
+
 /* ================== КОД ================== */
 
 const FALLBACK_ICON = '📍';
@@ -192,18 +274,86 @@ const iconOf = name => (TYPES.find(t => t.name === name) || {}).icon || FALLBACK
 const statusEl = document.getElementById('status');
 const countEl = document.getElementById('count');
 const typesEl = document.getElementById('types');
+const addEl = document.getElementById('add');
 
-const groups = new Map();   // вид -> коллекция меток
-const counts = new Map();   // вид -> число точек
+const groups = new Map();      // вид -> коллекция меток
+const counts = new Map();      // вид -> число точек
+const visible = new Map();     // вид -> показан ли на карте
+const placemarks = [];         // { pm, p } для обновления подписей при смене языка
 let map = null;
 
-function showStatus(text) { statusEl.textContent = text; statusEl.hidden = false; }
-function hideStatus() { statusEl.hidden = true; }
+/* ----- Язык ----- */
+
+function pickLang() {
+  try {
+    const q = new URLSearchParams(location.search).get('lang');
+    if (q && I18N[q]) return q;
+  } catch (e) {}
+  try {
+    const saved = localStorage.getItem('lang');
+    if (saved && I18N[saved]) return saved;
+  } catch (e) {}
+  const prefs = navigator.languages || [navigator.language || 'ru'];
+  return prefs.some(l => String(l).toLowerCase().startsWith('cv')) ? 'cv' : 'ru';
+}
+
+let lang = pickLang();
+let countState = { key: 'loading', n: 0 };
+let statusKey = null;
+
+function t(key, vars) {
+  let s = (I18N[lang] && I18N[lang][key]);
+  if (s === undefined) s = I18N.ru[key];
+  if (s === undefined) s = key;
+  if (vars) for (const k in vars) s = s.replace('{' + k + '}', vars[k]);
+  return s;
+}
+
+const typeLabel = name => (I18N[lang].types && I18N[lang].types[name]) || name;
+
+function applyTexts() {
+  document.documentElement.lang = t('htmlLang');
+  document.title = t('title');
+  document.getElementById('title').textContent = t('title');
+  document.getElementById('all').textContent = t('showAll');
+  document.getElementById('none').textContent = t('hideAll');
+  document.getElementById('map').setAttribute('aria-label', t('mapLabel'));
+  addEl.textContent = t('add');
+
+  const url = FORM_URLS[lang] || FORM_URLS.ru || '';
+  if (url.startsWith('http')) { addEl.href = url; addEl.hidden = false; } else { addEl.hidden = true; }
+
+  countEl.textContent = countState.key === 'count' ? t('count', { n: countState.n }) : t(countState.key);
+  if (statusKey) statusEl.textContent = t(statusKey);
+
+  document.querySelectorAll('#lang button').forEach(b =>
+    b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
+}
+
+function setLang(next) {
+  if (!I18N[next] || next === lang) return;
+  lang = next;
+  try { localStorage.setItem('lang', lang); } catch (e) {}
+  applyTexts();
+  rebuildLegend();
+  placemarks.forEach(({ pm, p }) => pm.properties.set('balloonContentBody', balloonBody(p)));
+}
+
+function setCount(key, n) { countState = { key, n: n || 0 }; applyTexts(); }
+function showStatus(key) { statusKey = key; statusEl.textContent = t(key); statusEl.hidden = false; }
+function hideStatus() { statusKey = null; statusEl.hidden = true; }
+
+/* ----- Карта ----- */
 
 // Всплывающее окно Яндекса принимает HTML, поэтому весь введённый людьми текст экранируем
 function esc(s) {
   return String(s).replace(/[&<>"']/g, ch =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+function balloonBody(p) {
+  return '<p class="b-type">' + esc(typeLabel(p.type)) + '</p>' +
+    (p.description ? '<p class="b-desc">' + esc(p.description).replace(/\n/g, '<br>') + '</p>' : '');
 }
 
 function loadYandex(key) {
@@ -217,21 +367,24 @@ function loadYandex(key) {
 }
 
 function makePlacemark(p, PinLayout) {
-  return new ymaps.Placemark([p.lat, p.lon], {
+  const pm = new ymaps.Placemark([p.lat, p.lon], {
     icon: iconOf(p.type),
     hintContent: esc(p.name),
     balloonContentHeader: '<p class="b-name">' + esc(p.name) + '</p>',
-    balloonContentBody:
-      '<p class="b-type">' + esc(p.type) + '</p>' +
-      (p.description ? '<p class="b-desc">' + esc(p.description).replace(/\n/g, '<br>') + '</p>' : ''),
+    balloonContentBody: balloonBody(p),
   }, {
     iconLayout: PinLayout,
     iconShape: { type: 'Circle', coordinates: [0, 0], radius: 17 },
     iconOffset: [-17, -17],
   });
+  placemarks.push({ pm, p });
+  return pm;
 }
 
-function buildLegend() {
+/* ----- Список видов ----- */
+
+function rebuildLegend() {
+  typesEl.replaceChildren();
   const names = TYPES.map(t => t.name);
   counts.forEach((_, name) => { if (!names.includes(name)) names.push(name); });
 
@@ -242,11 +395,13 @@ function buildLegend() {
 
     const label = document.createElement('label');
     const cb = document.createElement('input');
-    cb.type = 'checkbox'; cb.checked = true; cb.dataset.type = name;
+    cb.type = 'checkbox';
+    cb.checked = visible.get(name) !== false;
+    cb.dataset.type = name;
     cb.addEventListener('change', () => toggle(name, cb.checked));
 
     const ic = document.createElement('span'); ic.className = 't-icon'; ic.textContent = iconOf(name);
-    const nm = document.createElement('span'); nm.className = 't-name'; nm.textContent = name;
+    const nm = document.createElement('span'); nm.className = 't-name'; nm.textContent = typeLabel(name);
     const num = document.createElement('span'); num.className = 't-num'; num.textContent = n;
 
     label.append(cb, ic, nm, num);
@@ -256,6 +411,7 @@ function buildLegend() {
 }
 
 function toggle(name, on) {
+  visible.set(name, on);
   const g = groups.get(name);
   if (!g || !map) return;
   on ? map.geoObjects.add(g) : map.geoObjects.remove(g);
@@ -265,11 +421,13 @@ function setAll(on) {
   typesEl.querySelectorAll('input').forEach(cb => { cb.checked = on; toggle(cb.dataset.type, on); });
 }
 
+/* ----- Загрузка ----- */
+
 async function load() {
   if (YANDEX_KEY.startsWith('ВСТАВЬТЕ') || DATA_URL.startsWith('ВСТАВЬТЕ')) {
-    countEl.textContent = 'Страница не настроена';
-    showStatus('В файле index.html нужно заменить YANDEX_KEY на ключ Яндекс Карт и DATA_URL на адрес веб-приложения Apps Script.');
-    buildLegend();
+    setCount('notConfigured');
+    showStatus('notConfiguredLong');
+    rebuildLegend();
     return;
   }
 
@@ -300,38 +458,43 @@ async function load() {
       groups.get(p.type).add(makePlacemark(p, PinLayout));
     });
 
-    countEl.textContent = points.length
-      ? 'Топонимов на карте: ' + points.length
-      : 'Пока нет одобренных топонимов';
+    if (points.length) setCount('count', points.length); else setCount('empty');
 
     if (points.length) {
       map.setBounds(map.geoObjects.getBounds(), { checkZoomRange: true, zoomMargin: 50 })
         .then(() => { if (map.getZoom() > 14) map.setZoom(14); });
     }
-    buildLegend();
+    rebuildLegend();
     hideStatus();
   } catch (err) {
-    countEl.textContent = 'Не удалось загрузить данные';
-    showStatus('Не удалось загрузить карту или топонимы. Обновите страницу или зайдите позже.');
-    buildLegend();
+    setCount('loadError');
+    showStatus('loadErrorLong');
+    rebuildLegend();
     console.error(err);
   }
 }
 
+/* ----- События ----- */
+
 document.getElementById('all').addEventListener('click', () => setAll(true));
 document.getElementById('none').addEventListener('click', () => setAll(false));
+document.getElementById('lang').addEventListener('click', e => {
+  const b = e.target.closest('button[data-lang]');
+  if (b) setLang(b.dataset.lang);
+});
 
-// На телефоне панель сворачивается по нажатию на заголовок
+// На телефоне панель сворачивается по нажатию на заголовок (кроме переключателя языка)
 const side = document.getElementById('side');
 if (matchMedia('(max-width: 760px)').matches) side.classList.add('collapsed');
-document.getElementById('head').addEventListener('click', () => {
+document.getElementById('head').addEventListener('click', e => {
+  if (e.target.closest('.lang')) return;
   if (matchMedia('(max-width: 760px)').matches) {
     side.classList.toggle('collapsed');
     setTimeout(() => map && map.container.fitToViewport(), 50);
   }
 });
-const addBtn = document.getElementById('add');
-if (FORM_URL.startsWith('http')) addBtn.href = FORM_URL; else addBtn.hidden = true;
+
+setCount('loading');
 load();
 </script>
 </body>
