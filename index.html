@@ -117,13 +117,11 @@
 
   /* Значок на карте */
   .pin {
-    width: 34px; height: 34px;
+    width: 40px; height: 40px;
     display: grid; place-items: center;
-    background: #ffffff;
-    border: 2px solid #2c6a4f;
-    border-radius: 50%;
-    box-shadow: 0 2px 6px rgba(0,0,0,.35);
-    font-size: 18px; line-height: 1;
+    background-repeat: no-repeat; background-size: 100% 100%;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,.35));
+    line-height: 1;
   }
 
   /* Всплывающее окно */
@@ -209,6 +207,13 @@ const FORM_ENTRY = {
 
 // Центр и масштаб карты, пока нет точек. Центр: [широта, долгота]
 const DEFAULT_VIEW = { center: [55.75, 37.62], zoom: 5 };
+
+// Форма значков на карте для всех видов: 'circle' (круг), 'square' (квадрат со скруглением),
+// 'diamond' (ромб), 'hexagon' (шестиугольник), 'star' (восьмиконечная звезда).
+// Для отдельного вида можно задать свою форму: добавьте в его строку в TYPES, например shape: 'star'.
+const PIN_SHAPE = 'diamond';
+// Цвет контура значков
+const PIN_STROKE = '#2c6a4f';
 
 // Виды топонимов. name должен ТОЧНО совпадать с вариантом в выпадающем списке формы
 // (форма остаётся на русском), а подписи для сайта задаются ниже в I18N.
@@ -424,16 +429,57 @@ function loadYandex(key) {
   });
 }
 
-function makePlacemark(p, PinLayout) {
+/* ----- Значки: форма рисуется как SVG-фон, эмодзи лежит поверх ----- */
+
+function starPoints(n, R, r) {
+  const pts = [];
+  for (let i = 0; i < 2 * n; i++) {
+    const rad = i % 2 ? r : R;
+    const a = -Math.PI / 2 + i * Math.PI / n;
+    pts.push((20 + rad * Math.cos(a)).toFixed(2) + ',' + (20 + rad * Math.sin(a)).toFixed(2));
+  }
+  return pts.join(' ');
+}
+
+const PIN_SHAPES = {
+  circle:  { svg: '<circle cx="20" cy="20" r="18"/>', font: 18 },
+  square:  { svg: '<rect x="3" y="3" width="34" height="34" rx="7"/>', font: 18 },
+  diamond: { svg: '<polygon points="20,2 38,20 20,38 2,20"/>', font: 16 },
+  hexagon: { svg: '<polygon points="20,2 35.6,11 35.6,29 20,38 4.4,29 4.4,11"/>', font: 17 },
+  star:    { svg: '<polygon points="' + starPoints(8, 19, 13) + '"/>', font: 14 },
+};
+
+const pinLayouts = {};
+function pinLayout(shape) {
+  const key = PIN_SHAPES[shape] ? shape : 'circle';
+  if (!pinLayouts[key]) {
+    const def = PIN_SHAPES[key];
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">' +
+      '<g fill="#ffffff" stroke="' + PIN_STROKE + '" stroke-width="2.5" stroke-linejoin="round">' +
+      def.svg + '</g></svg>';
+    const style = "background-image:url('data:image/svg+xml," + encodeURIComponent(svg) + "');font-size:" + def.font + 'px';
+    pinLayouts[key] = ymaps.templateLayoutFactory.createClass(
+      '<div class="pin" style="' + style + '">{{ properties.icon }}</div>'
+    );
+  }
+  return pinLayouts[key];
+}
+
+const shapeOf = name => (TYPES.find(t => t.name === name) || {}).shape || PIN_SHAPE;
+
+function makePlacemark(p) {
   const pm = new ymaps.Placemark([p.lat, p.lon], {
     icon: iconOf(p.type),
     hintContent: esc(p.name),
     balloonContentHeader: '<p class="b-name">' + esc(p.name) + '</p>',
     balloonContentBody: balloonBody(p),
   }, {
-    iconLayout: PinLayout,
-    iconShape: { type: 'Circle', coordinates: [0, 0], radius: 17 },
-    iconOffset: [-17, -17],
+    iconLayout: pinLayout(shapeOf(p.type)),
+    iconShape: { type: 'Circle', coordinates: [0, 0], radius: 20 },
+    iconOffset: [-20, -20],
+    // На сенсорных экранах всплывающая подсказка перехватывает первое нажатие,
+    // и окно с описанием открывается только со второго раза
+    hasHint: !IS_TOUCH,
   });
   placemarks.push({ pm, p });
   return pm;
@@ -577,10 +623,6 @@ async function load() {
       if (!e.target.closest('[class*="balloon"]')) e.preventDefault();
     });
 
-    const PinLayout = ymaps.templateLayoutFactory.createClass(
-      '<div class="pin">{{ properties.icon }}</div>'
-    );
-
     const res = await fetch(DATA_URL);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const points = await res.json();
@@ -592,7 +634,7 @@ async function load() {
         map.geoObjects.add(g);
       }
       counts.set(p.type, (counts.get(p.type) || 0) + 1);
-      groups.get(p.type).add(makePlacemark(p, PinLayout));
+      groups.get(p.type).add(makePlacemark(p));
     });
 
     if (points.length) setCount('count', points.length); else setCount('empty');
