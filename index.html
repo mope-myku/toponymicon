@@ -54,7 +54,15 @@
     background: none; border: 1px solid var(--line); border-radius: 6px;
     padding: 4px 10px; cursor: pointer;
   }
-  .tools button:hover { border-color: var(--accent); }
+  .tools button:hover { border-color: var(--accent); }  .add {
+    display: block; margin: 12px 20px; padding: 10px 14px;
+    text-align: center; text-decoration: none; font-weight: 600;
+    background: var(--accent); color: #fff; border-radius: 8px;
+  }
+  .add:hover { filter: brightness(1.08); }
+  .add:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .add[hidden] { display: none; }
+  @media (prefers-color-scheme: dark) { .add { color: #10201a; } }
 
   #types { list-style: none; margin: 0; padding: 6px 12px 16px; overflow-y: auto; flex: 1; }
   #types label {
@@ -110,6 +118,7 @@
     <h1>Карта топонимов</h1>
     <p id="count">Загрузка…</p>
   </header>
+    <a id="add" class="add" href="#" target="_blank" rel="noopener">Предложить топоним</a>
   <div class="tools">
     <button type="button" id="all">Показать все</button>
     <button type="button" id="none">Скрыть все</button>
@@ -128,6 +137,9 @@ const YANDEX_KEY = '0904c216-9d48-4c01-9fdb-daa4bf61b96c';
 
 // Адрес веб-приложения Apps Script (заканчивается на /exec)
 const DATA_URL = 'https://script.google.com/macros/s/AKfycbyKzNW0mcK-gcd_JOwZ6L8i89310FG_Y4zXhfE0kSTTyllEh7wCT0PmZu9lvpweo2Iu/exec';
+
+// Ссылка на вашу Google Форму
+const FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLScBFj6w1t2vVsiYipM7D56J1QSOw7-cZ3fkkbZqpxaRhSj55w/viewform';
 
 // Центр и масштаб карты, пока нет точек. Центр: [широта, долгота]
 const DEFAULT_VIEW = { center: [55.75, 37.62], zoom: 5 };
@@ -302,7 +314,8 @@ document.getElementById('head').addEventListener('click', () => {
     setTimeout(() => map && map.container.fitToViewport(), 50);
   }
 });
-
+const addBtn = document.getElementById('add');
+if (FORM_URL.startsWith('http')) addBtn.href = FORM_URL; else addBtn.hidden = true;
 load();
 </script>
 </body>
