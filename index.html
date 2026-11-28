@@ -139,6 +139,24 @@
   }
   .b-btn { background: #fff; color: #2c6a4f; }
   .hint { margin: 0 20px 12px; font-size: 13px; color: var(--muted); }
+  .draw { margin: 0 20px 10px; }
+  .draw-btn {
+    width: 100%; font: inherit; font-size: 14px; color: var(--accent);
+    background: none; border: 1px solid var(--accent); border-radius: 8px;
+    padding: 8px 12px; cursor: pointer;
+  }
+  .draw-btn[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  @media (prefers-color-scheme: dark) { .draw-btn[aria-pressed="true"] { color: #10201a; } }
+  .draw-tools .hint { margin: 8px 0; }
+  .draw-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .draw-actions button {
+    font: inherit; font-size: 13px; color: var(--accent);
+    background: none; border: 1px solid var(--line); border-radius: 6px;
+    padding: 4px 10px; cursor: pointer;
+  }
+  .draw-actions button:hover { border-color: var(--accent); }
+  #drawDone { background: var(--accent); color: #fff; border-color: var(--accent); }
+  @media (prefers-color-scheme: dark) { #drawDone { color: #10201a; } }
   .opt { display: flex; align-items: center; gap: 10px; margin: 0 20px 8px; cursor: pointer; font-size: 14px; }
   .opt input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
 
@@ -175,6 +193,17 @@
   <a id="add" class="add" href="#" target="_blank" rel="noopener"></a>
   <label class="opt"><input type="checkbox" id="pickToggle"><span id="pickLabel"></span></label>
   <p id="hint" class="hint"></p>
+  <div class="draw">
+    <button type="button" id="drawBtn" class="draw-btn" aria-pressed="false"></button>
+    <div id="drawTools" class="draw-tools" hidden>
+      <p id="drawHint" class="hint"></p>
+      <div class="draw-actions">
+        <button type="button" id="drawUndo"></button>
+        <button type="button" id="drawClear"></button>
+        <button type="button" id="drawDone"></button>
+      </div>
+    </div>
+  </div>
   <div class="tools">
     <button type="button" id="all"></button>
     <button type="button" id="none"></button>
@@ -207,6 +236,16 @@ const FORM_ENTRY = {
   ru: '',
   cv: '',   // пусто = берётся значение для ru
 };
+
+// Номер поля «Граница области» в форме (вид 'entry.1234567890'), чтобы нарисованная область
+// подставлялась в форму сама. Пусто = не подставлять.
+const FORM_ENTRY_AREA = {
+  ru: '',
+  cv: '',
+};
+
+// Цвет границ областей (оттенок вида #RRGGBB; заливка берётся полупрозрачной)
+const AREA_COLOR = '#2c6a4f';
 
 // Центр и масштаб карты, пока нет точек. Центр: [широта, долгота]
 const DEFAULT_VIEW = { center: [55.75, 37.62], zoom: 5 };
@@ -271,6 +310,15 @@ const I18N = {
     copyFailed: 'Не удалось скопировать автоматически. Выделите координаты и скопируйте вручную.',
     copyBtn: 'Копировать',
     suggestHere: 'Предложить топоним здесь',
+    drawBtn: 'Нарисовать область',
+    drawStop: 'Отменить рисование',
+    drawHint: 'Нажимайте на карту, чтобы отметить углы области. Нужно не меньше трёх точек.',
+    drawUndo: 'Убрать точку',
+    drawClear: 'Очистить',
+    drawDone: 'Готово',
+    areaNeed: 'Отметьте не меньше трёх точек',
+    areaCopied: '✓ Граница области скопирована',
+    areaTitle: 'Область из {n} точек',
     types: {},
   },
   cv: {
@@ -384,6 +432,7 @@ function applyTexts() {
   hintEl.hidden = !pickEnabled;
   document.getElementById('pickLabel').textContent = t(IS_TOUCH ? 'pickToggleTouch' : 'pickToggle');
   document.getElementById('pickToggle').checked = pickEnabled;
+  updateDrawUI();
   addEl.textContent = t('add');
 
   const url = FORM_URLS[lang] || FORM_URLS.ru || '';
@@ -544,26 +593,28 @@ function copyText(text) {
 }
 
 // Ссылка на форму с уже подставленными координатами (если указан номер поля)
-function formLinkFor(text) {
+function formLinkFor(fields) {
   const base = FORM_URLS[lang] || FORM_URLS.ru || '';
   if (!base.startsWith('http')) return { url: '', prefilled: false };
-  let entry = (FORM_ENTRY[lang] || FORM_ENTRY.ru || '').trim();
-  if (!entry) return { url: base, prefilled: false };
-  if (!/^entry\./.test(entry)) entry = 'entry.' + entry;
-  try {
-    const u = new URL(base);
-    u.searchParams.set('usp', 'pp_url');
-    u.searchParams.set(entry, text);
-    return { url: u.toString(), prefilled: true };
-  } catch (e) {
-    return { url: base, prefilled: false };
-  }
+  let u;
+  try { u = new URL(base); } catch (e) { return { url: base, prefilled: false }; }
+
+  let any = false;
+  [[FORM_ENTRY, fields.coords], [FORM_ENTRY_AREA, fields.area]].forEach(([cfg, value]) => {
+    let entry = ((cfg && (cfg[lang] || cfg.ru)) || '').trim();
+    if (!entry || !value) return;
+    if (!/^entry\./.test(entry)) entry = 'entry.' + entry;
+    if (!any) u.searchParams.set('usp', 'pp_url');
+    u.searchParams.set(entry, value);
+    any = true;
+  });
+  return { url: any ? u.toString() : base, prefilled: any };
 }
 
 function showPick(coords) {
   const text = coords[0].toFixed(6) + ', ' + coords[1].toFixed(6);
   copyText(text).then(ok => {
-    const form = formLinkFor(text);
+    const form = formLinkFor({ coords: text });
     const label = form.prefilled ? t('suggestHere') : t('add');
     map.balloon.open(coords, {
       contentHeader: '<p class="b-name">' + esc(text) + '</p>',
@@ -582,6 +633,146 @@ document.addEventListener('click', e => {
   if (!b) return;
   copyText(b.dataset.copy).then(ok => { b.textContent = ok ? t('copied') : t('copyFailed'); });
 });
+
+/* ----- Области: рисование на карте и показ границ ----- */
+
+let drawing = false;
+let verts = [];            // [[широта, долгота], ...]
+let drawPreview = null;    // коллекция с контуром, который рисует человек
+let drawCursor = null;
+let areaShown = false;     // показано окно «Готово», контур ещё на карте
+
+const areaToText = v => v.map(c => c[0].toFixed(6) + ', ' + c[1].toFixed(6)).join('\n');
+const centerOf = v => [
+  v.reduce((s, c) => s + c[0], 0) / v.length,
+  v.reduce((s, c) => s + c[1], 0) / v.length,
+];
+
+// Пока человек рисует, метки и области «молчат», чтобы нажатия попадали на карту
+function setSilent(on) {
+  placemarks.forEach(({ pm }) => pm.options.set('interactivityModel', on ? 'default#silent' : 'default#geoObject'));
+}
+
+function renderDraw() {
+  if (!drawPreview) return;
+  drawPreview.removeAll();
+  const red = '#c8553d';
+  if (verts.length >= 3) {
+    drawPreview.add(new ymaps.Polygon([verts], {}, {
+      fillColor: red + '44', strokeColor: red, strokeWidth: 3, interactivityModel: 'default#silent',
+    }));
+  } else if (verts.length === 2) {
+    drawPreview.add(new ymaps.Polyline(verts, {}, { strokeColor: red, strokeWidth: 3, interactivityModel: 'default#silent' }));
+  }
+  verts.forEach((v, i) => drawPreview.add(new ymaps.Placemark(v, { iconContent: String(i + 1) }, {
+    preset: 'islands#redCircleIcon', interactivityModel: 'default#silent',
+  })));
+}
+
+function updateDrawUI() {
+  const btn = document.getElementById('drawBtn');
+  btn.textContent = t(drawing ? 'drawStop' : 'drawBtn');
+  btn.setAttribute('aria-pressed', String(drawing));
+  document.getElementById('drawTools').hidden = !drawing;
+  document.getElementById('drawHint').textContent = t('drawHint');
+  document.getElementById('drawUndo').textContent = t('drawUndo');
+  document.getElementById('drawClear').textContent = t('drawClear');
+  document.getElementById('drawDone').textContent = t('drawDone');
+}
+
+function startDraw() {
+  if (!map) return;
+  map.balloon.close();
+  drawing = true; verts = []; areaShown = false;
+  setSilent(true);
+  if (map.cursors) drawCursor = map.cursors.push('crosshair');
+  renderDraw();
+  updateDrawUI();
+}
+
+function stopDraw(keepPreview) {
+  drawing = false;
+  setSilent(false);
+  if (drawCursor) { drawCursor.remove(); drawCursor = null; }
+  if (!keepPreview) { verts = []; renderDraw(); }
+  updateDrawUI();
+}
+
+function onDrawClick(e) {
+  if (!drawing) return;
+  verts.push(e.get('coords'));
+  renderDraw();
+}
+
+function finishDraw() {
+  if (verts.length < 3) {
+    const h = document.getElementById('drawHint');
+    h.textContent = t('areaNeed');
+    setTimeout(() => { h.textContent = t('drawHint'); }, 3000);
+    return;
+  }
+  const text = areaToText(verts);
+  const c = centerOf(verts);
+  const n = verts.length;
+  stopDraw(true);
+  copyText(text).then(ok => {
+    const form = formLinkFor({ coords: c[0].toFixed(6) + ', ' + c[1].toFixed(6), area: text });
+    const label = form.prefilled ? t('suggestHere') : t('add');
+    map.balloon.open(c, {
+      contentHeader: '<p class="b-name">' + esc(t('areaTitle', { n })) + '</p>',
+      contentBody: '<p class="b-desc">' + esc(t(ok ? 'areaCopied' : 'copyFailed')) + '</p>',
+      contentFooter: '<div class="b-actions">' +
+        (form.url ? '<a class="b-link" href="' + esc(form.url) + '" target="_blank" rel="noopener">' + esc(label) + '</a>' : '') +
+        '<button type="button" class="b-btn" data-copy="' + esc(text) + '">' + esc(t('copyBtn')) + '</button>' +
+        '</div>',
+    });
+    areaShown = true;
+  });
+}
+
+// Координаты места по клику (правая кнопка на компьютере, нажатие на сенсорных экранах)
+function onPick(e) {
+  if (!pickEnabled || drawing) return;
+  const target = e.get('target');
+  if (target && target.geometry) return;
+  showPick(e.get('coords'));
+}
+
+// Проверка границы области, пришедшей с сервера
+function cleanArea(a) {
+  if (!Array.isArray(a) || a.length < 3 || a.length > 500) return null;
+  const ring = [];
+  for (const v of a) {
+    if (!Array.isArray(v)) return null;
+    const la = Number(v[0]), lo = Number(v[1]);
+    if (!isFinite(la) || !isFinite(lo) || Math.abs(la) > 90 || Math.abs(lo) > 180) return null;
+    ring.push([la, lo]);
+  }
+  return ring;
+}
+
+function makeArea(p, ring) {
+  const poly = new ymaps.Polygon([ring], {
+    hintContent: esc(p.name),
+    balloonContentHeader: '<p class="b-name">' + esc(p.name) + '</p>',
+    balloonContentBody: balloonBody(p),
+  }, {
+    fillColor: AREA_COLOR + '33',
+    strokeColor: AREA_COLOR,
+    strokeWidth: 2,
+    hasHint: !IS_TOUCH,
+  });
+  // На компьютере правый клик внутри области тоже даёт координаты
+  if (!IS_TOUCH) {
+    poly.events.add('contextmenu', e => {
+      if (e.stopPropagation) e.stopPropagation();
+      if (!pickEnabled || drawing) return;
+      showPick(e.get('coords'));
+    });
+  }
+  placemarks.push({ pm: poly, p });
+  return poly;
+}
 
 /* ----- Список видов ----- */
 
@@ -644,13 +835,17 @@ async function load() {
 
     // Координаты места: правая кнопка мыши на компьютере, обычное нажатие на сенсорных экранах.
     // Метки топонимов сюда не относятся (у них своё окно).
-    const onPick = e => {
-      if (!pickEnabled) return;
-      const target = e.get('target');
-      if (target && target.geometry) return;
-      showPick(e.get('coords'));
-    };
     map.events.add(IS_TOUCH ? 'click' : 'contextmenu', onPick);
+
+    // Рисование области: нажатия добавляют углы, пока включён режим рисования
+    drawPreview = new ymaps.GeoObjectCollection();
+    map.geoObjects.add(drawPreview);
+    map.events.add('click', onDrawClick);
+    if (map.balloon.events) {
+      map.balloon.events.add('close', () => {
+        if (areaShown && !drawing) { areaShown = false; verts = []; renderDraw(); }
+      });
+    }
 
     // Не показывать меню браузера при правом клике по карте (кроме текста в окне с координатами)
     document.getElementById('map').addEventListener('contextmenu', e => {
@@ -674,6 +869,8 @@ async function load() {
         map.geoObjects.add(g);
       }
       counts.set(p.type, (counts.get(p.type) || 0) + 1);
+      const ring = cleanArea(p.area);
+      if (ring) groups.get(p.type).add(makeArea(p, ring));
       groups.get(p.type).add(makePlacemark(p));
     });
 
@@ -701,6 +898,10 @@ document.getElementById('pickToggle').addEventListener('change', e => {
   document.getElementById('hint').hidden = !pickEnabled;
   if (!pickEnabled && map) map.balloon.close();
 });
+document.getElementById('drawBtn').addEventListener('click', () => { drawing ? stopDraw(false) : startDraw(); });
+document.getElementById('drawUndo').addEventListener('click', () => { verts.pop(); renderDraw(); });
+document.getElementById('drawClear').addEventListener('click', () => { verts = []; renderDraw(); });
+document.getElementById('drawDone').addEventListener('click', finishDraw);
 document.getElementById('all').addEventListener('click', () => setAll(true));
 document.getElementById('none').addEventListener('click', () => setAll(false));
 document.getElementById('lang').addEventListener('click', e => {
