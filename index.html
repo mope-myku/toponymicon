@@ -630,6 +630,13 @@ async function load() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const points = await res.json();
 
+    // Приводим тексты к единому виду записи: «а» + отдельная чёрточка превращается в одну букву «ӑ».
+    // Без этого у людей, набравших буквы с чёрточкой в виде двух знаков, чёрточка может
+    // отображаться отдельным символом после буквы.
+    points.forEach(p => {
+      ['type', 'name', 'description'].forEach(k => { p[k] = String(p[k] == null ? '' : p[k]).normalize('NFC'); });
+    });
+
     points.forEach(p => {
       if (!groups.has(p.type)) {
         const g = new ymaps.GeoObjectCollection();
