@@ -116,7 +116,10 @@
   #status[hidden] { display: none; }
 
   /* Значок на карте */
+  /* Значок сдвигается стилями, а не опцией iconOffset: так область нажатия совпадает с картинкой */
+  .pin-wrap { position: relative; }
   .pin {
+    position: absolute; left: -20px; top: -20px;
     width: 40px; height: 40px;
     display: grid; place-items: center;
     background-repeat: no-repeat; background-size: 100% 100%;
@@ -459,7 +462,7 @@ function pinLayout(shape) {
       def.svg + '</g></svg>';
     const style = "background-image:url('data:image/svg+xml," + encodeURIComponent(svg) + "');font-size:" + def.font + 'px';
     pinLayouts[key] = ymaps.templateLayoutFactory.createClass(
-      '<div class="pin" style="' + style + '">{{ properties.icon }}</div>'
+      '<div class="pin-wrap"><div class="pin" style="' + style + '">{{ properties.icon }}</div></div>'
     );
   }
   return pinLayouts[key];
@@ -475,8 +478,8 @@ function makePlacemark(p) {
     balloonContentBody: balloonBody(p),
   }, {
     iconLayout: pinLayout(shapeOf(p.type)),
+    // Область нажатия: круг вокруг точки метки, она совпадает с картинкой 40 на 40
     iconShape: { type: 'Circle', coordinates: [0, 0], radius: 20 },
-    iconOffset: [-20, -20],
     // На сенсорных экранах всплывающая подсказка перехватывает первое нажатие,
     // и окно с описанием открывается только со второго раза
     hasHint: !IS_TOUCH,
